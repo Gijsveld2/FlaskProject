@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fruit Counter</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .container { display: flex; gap: 20px; margin-bottom: 20px; }
+        .video-box { flex: 1; }
+        #liveFeed { max-width: 100%; border: 2px solid #333; }
+        .result-box { background: #f9f9f9; padding: 15px; margin: 10px 0; }
+        .history { margin-top: 30px; }
+        .processing { color: blue; }
+        .error { color: red; }
+        #stopBtn { background-color: #ff4444; color: white; border: none; padding: 5px 10px; cursor: pointer; }
+        .comparison { display: flex; gap: 20px; }
+        .comparison-item { flex: 1; }
+    </style>
+</head>
+<body>
+    <h1>Подсчёт фруктов</h1>
+
+    <form method="post" action="/upload" enctype="multipart/form-data">
+        <input type="file" name="file" accept="image/*, video/*" required>
+        <button type="submit">Анализировать</button>
+        {% if is_processing %}
+            <button type="button" id="stopBtn">Остановить обработку</button>
+        {% endif %}
+    </form>
+
+    {% if input_file %}
+        <div class="container">
+            <div class="video-box">
+                <h2>Исходный файл</h2>
+                {% if input_file.lower().endswith(('.mp4', '.avi', '.mov')) %}
+                    <video controls width="100%">
+                        <source src="{{ input_file }}" type="video/mp4">
+                    </video>
+                {% else %}
+                    <img src="{{ input_file }}" alt="Input Image" width="100%">
+                {% endif %}
+            </div>
+
+            {% if is_video %}
+                <div class="video-box">
+                    <h2>Детекция в реальном времени</h2>
+                    <img id="liveFeed" src="{{ url_for('video_feed') }}">
+                    {% if is_processing %}
+                        <p class="processing">Идёт обработка видео...</p>
+                    {% endif %}
+                </div>
+            {% elif processed_file %}
+                <div class="video-box">
+                    <h2>Результат обработки</h2>
+                    <img src="{{ processed_file }}" alt="Processed Image" width="100%">
+                </div>
+            {% endif %}
+        </div>
+
+        {% if result and not is_video %}
+            <div class="result-box">
+                <h2>Результат</h2>
+                <p>🍎 Яблоки: {{ result.apple }}</p>
+                <p>🍌 Бананы: {{ result.banana }}</p>
+                <p>🍊 Апельсины: {{ result.orange }}</p>
+            </div>
+        {% elif is_video and not is_processing %}
+            <div class="result-box">
+                <h2>Обработка завершена</h2>
+                <a href="/download_report/report_{{ input_file.split('/')[-1] }}.xlsx">
+                    Скачать отчёт (Excel)
+                </a>
+                <p>Обработанное видео сохранено в: static/processed/{{ current_video }}</p>
+            </div>
+        {% endif %}
+    {% endif %}
+
+    <div class="history">
+        <h2>История запросов</h2>
+        <table>
+            <tr>
+                <th>Дата</th>
+                <th>Тип файла</th>
+                <th>Файл</th>
+                <th>Результат</th>
+            </tr>
+            {% for entry in history %}
+                <tr>
+                    <td>{{ entry.timestamp }}</td>
+                    <td>{{ entry.file_type }}</td>
+                    <td>
+                        {% if entry.file_type == "image" %}
+                            <a href="static/processed/{{ entry.filename }}" target="_blank">{{ entry.filename }}</a>
+                        {% else %}
+                            <a href="static/processed/{{ entry.filename }}" target="_blank">{{ entry.filename }}</a>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if entry.file_type == "image" %}
+                            🍎 {{ entry.detections.apple }}
+                            🍌 {{ entry.detections.banana }}
+                            🍊 {{ entry.detections.orange }}
+                        {% else %}
+                            <a href="/download_report/report_{{ entry.filename }}.xlsx">Отчёт</a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </table>
+    </div>
+
+    <script>
+        const liveFeed = document.getElementById('liveFeed');
+        if (liveFeed) {
+            setInterval(() => {
+                liveFeed.src = "{{ url_for('video_feed') }}?t=" + new Date().getTime();
+            }, 100);
+        }
+
+        document.getElementById('stopBtn')?.addEventListener('click', async () => {
+            await fetch('/stop_processing');
+            location.reload();
+        });
+
+        {% if is_processing %}
+        const checkProcessing = setInterval(async () => {
+            const response = await fetch('/');
+            const text = await response.text();
+            if (!text.includes('Идёт обработка видео')) {
+                clearInterval(checkProcessing);
+                location.reload();
+            }
+        }, 1000);
+        {% endif %}
+    </script>
+</body>
+</html>
